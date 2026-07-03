@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LoanType {
+  PERSONAL
+  HOME
+  MORTGAGE
+  AUTO
+  MSME
+}
+
+enum RiskBand {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Borrower {
+  id              String   @id @default(uuid())
+  name            String
+  isMsme          Boolean  @default(false)
+  sector          String?
+  registrationAt  DateTime?
+  ntbFlag         Boolean  @default(false) // New-to-Bank
+  ntcFlag         Boolean  @default(false) // New-to-Credit
+  createdAt       DateTime @default(now())
+
+  loans           Loan[]
+  gstFilings      GstFiling[]
+  upiTransactions UpiTransaction[]
+  epfoRecords     EpfoContribution[]
+  bureauRecords   BureauRecord[]
+  featureSnaps    FeatureStore[]
+  riskScores      RiskScore[]
+}
+
+model Loan {
+  id              String   @id @default(uuid())
+  borrowerId      String
+  borrower        Borrower @relation(fields: [borrowerId], references: [id])
+  loanType        LoanType
+  principal       Decimal
+  tenureMonths    Int
+  disbursedAt     DateTime
+  status          String   // active, closed, npa, restructured
+  createdAt       DateTime @default(now())
+
+  riskScores      RiskScore[]
+}
+
+model GstFiling {
+  id              String   @id @default(uuid())
+  borrowerId      String
+  borrower        Borrower @relation(fields: [borrowerId], references: [id])
+  period          String   // e.g. "2026-05"
+  turnover        Decimal
+  filedOnTime     Boolean
+  delayDays       Int      @default(0)
+  createdAt       DateTime @default(now())
+}
+
+model UpiTransaction {
+  id              String   @id @default(uuid())
+  borrowerId      String
+  borrower        Borrower @relation(fields: [borrowerId], references: [id])
+  txnDate         DateTime
+  amount          Decimal
+  direction       String   // inflow / outflow
+  counterpartyType String  // vendor, customer, personal, etc.
+  createdAt       DateTime @default(now())
+}
+
+model EpfoContribution {
+  id              String   @id @default(uuid())
+  borrowerId      String
+  borrower        Borrower @relation(fields: [borrowerId], references: [id])
+  period          String
+  employeeCount   Int
+  contribution    Decimal
+  isConsistent    Boolean  @default(true)
+  createdAt       DateTime @default(now())
+}
+
+model BureauRecord {
+  id              String   @id @default(uuid())
+  borrowerId      String
+  borrower        Borrower @relation(fields: [borrowerId], references: [id])
+  creditScore     Int
+  existingDebt    Decimal
+  utilizationPct  Decimal
+  delinquencies12m Int
+  asOfDate        DateTime
+  createdAt       DateTime @default(now())
+}
+
+model FeatureStore {
+  id                    String   @id @default(uuid())
+  borrowerId            String
+  borrower              Borrower @relation(fields: [borrowerId], references: [id])
+  asOfDate              DateTime
+  gstDelayAvgDays       Decimal
+  upiVolatilityIndex    Decimal
+  epfoConsistencyRatio  Decimal
+  debtToIncomeProxy     Decimal
+  utilizationTrend      Decimal
+  createdAt             DateTime @default(now())
+
+  @@index([borrowerId, asOfDate])
+}
+
+model ModelRun {
+  id            String   @id @default(uuid())
+  version       String
+  loanType      LoanType
+  trainedAt     DateTime @default(now())
+  accuracy      Decimal
+  aucRoc        Decimal
+  precision     Decimal
+  recall        Decimal
+  metricsJson   Json
+
+  riskScores    RiskScore[]
+}
+
+model RiskScore {
+  id              String   @id @default(uuid())
+  borrowerId      String
+  borrower        Borrower @relation(fields: [borrowerId], references: [id])
+  loanId          String?
+  loan            Loan?    @relation(fields: [loanId], references: [id])
+  modelRunId      String
+  modelRun        ModelRun @relation(fields: [modelRunId], references: [id])
+  probDefault     Decimal
+  score0to100     Int
+  riskBand        RiskBand
+  computedAt      DateTime @default(now())
+
+  explanations    RiskExplanation[]
+
+  @@index([borrowerId, computedAt])
+}
+
+model RiskExplanation {
+  id            String    @id @default(uuid())
+  riskScoreId   String
+  riskScore     RiskScore @relation(fields: [riskScoreId], references: [id])
+  featureName   String
+  shapValue     Decimal
+  direction     String    // increases_risk / decreases_risk
+  rank          Int
+}

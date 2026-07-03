@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: crediq-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: crediq
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d crediq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: crediq-ml
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/crediq?schema=public
+      ML_PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./ml-service:/app
+      - ml_artifacts:/app/artifacts
+
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crediq-api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/crediq?schema=public
+      ML_SERVICE_URL: http://ml-service:8000
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  ml_artifacts:
